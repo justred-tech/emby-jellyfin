@@ -1,0 +1,35 @@
+services:
+  emby-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: emby-downloader
+    restart: unless-stopped
+
+    # Port mapping
+    ports:
+      - "3030:3000"
+
+    # Shared volumes with Jellyfin
+    volumes:
+      # Movies directory - shared with Jellyfin
+      - /home/ricardo/jellyfin/movies:/media/movies:rw
+      # TV shows directory - shared with Jellyfin
+      - /home/ricardo/jellyfin/tvshows:/media/tvshows:rw
+      # Application data (SQLite database)
+      - ./data:/app/data:rw
+      # Environment file
+      - ./.env:/app/.env:ro
+
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - MOVIES_DIR=/media/movies
+      - TVSHOWS_DIR=/media/tvshows
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
