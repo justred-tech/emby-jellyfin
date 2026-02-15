@@ -20,7 +20,7 @@ Descarga contenido de un servidor Emby a carpetas de Jellyfin.
 ## Ejecutar
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 Acceder a `http://localhost:3030`
