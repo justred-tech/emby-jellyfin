@@ -99,6 +99,7 @@ export default function ItemDetailsPage() {
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [hasBackdrop, setHasBackdrop] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchItem = async () => {
@@ -215,6 +216,7 @@ export default function ItemDetailsPage() {
   const handleDownloadMovie = async () => {
     if (!item || item.type !== "movie") return;
     setIsDownloading(true);
+    setActionError(null);
     try {
       const response = await fetch("/api/downloads", {
         method: "POST",
@@ -226,10 +228,12 @@ export default function ItemDetailsPage() {
           year: item.year,
         }),
       });
-      if (!response.ok) throw new Error("Failed to start download");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Failed to start download");
       router.push("/queue");
     } catch (error) {
       console.error("Error starting download:", error);
+      setActionError(error instanceof Error ? error.message : "No se pudo iniciar la descarga");
       setIsDownloading(false);
     }
   };
@@ -237,6 +241,7 @@ export default function ItemDetailsPage() {
   const handleDownloadSeries = async () => {
     if (!item || item.type !== "series") return;
     setIsDownloading(true);
+    setActionError(null);
     try {
       const response = await fetch("/api/downloads", {
         method: "POST",
@@ -249,10 +254,12 @@ export default function ItemDetailsPage() {
           name: item.title,
         }),
       });
-      if (!response.ok) throw new Error("Failed to start download");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Failed to start download");
       router.push("/queue");
     } catch (error) {
       console.error("Error starting series download:", error);
+      setActionError(error instanceof Error ? error.message : "No se pudo iniciar la descarga");
       setIsDownloading(false);
     }
   };
@@ -260,6 +267,7 @@ export default function ItemDetailsPage() {
   const handleDownloadSeason = async (seasonNumber: number) => {
     if (!item || item.type !== "series") return;
     setIsDownloading(true);
+    setActionError(null);
     try {
       const response = await fetch("/api/downloads", {
         method: "POST",
@@ -273,10 +281,12 @@ export default function ItemDetailsPage() {
           seasonNumber,
         }),
       });
-      if (!response.ok) throw new Error("Failed to start download");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Failed to start download");
       router.push("/queue");
     } catch (error) {
       console.error("Error starting season download:", error);
+      setActionError(error instanceof Error ? error.message : "No se pudo iniciar la descarga");
       setIsDownloading(false);
     }
   };
@@ -284,6 +294,7 @@ export default function ItemDetailsPage() {
   const handleDownloadEpisode = async (episode: Episode) => {
     if (!item || item.type !== "series") return;
     setIsDownloading(true);
+    setActionError(null);
     try {
       const response = await fetch("/api/downloads", {
         method: "POST",
@@ -298,10 +309,12 @@ export default function ItemDetailsPage() {
           episodeNumber: episode.episodeNumber,
         }),
       });
-      if (!response.ok) throw new Error("Failed to start download");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Failed to start download");
       router.push("/queue");
     } catch (error) {
       console.error("Error starting episode download:", error);
+      setActionError(error instanceof Error ? error.message : "No se pudo iniciar la descarga");
       setIsDownloading(false);
     }
   };
@@ -450,6 +463,12 @@ export default function ItemDetailsPage() {
                     </Badge>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {actionError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {actionError}
               </div>
             )}
 
