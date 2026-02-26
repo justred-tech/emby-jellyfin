@@ -66,6 +66,7 @@ interface ActiveDownload {
 class DownloadManager {
   private activeDownloads: Map<string, ActiveDownload> = new Map();
   private maxConcurrentDownloads: number = 1;
+  private minValidFileBytes: number = parseInt(process.env.MIN_VALID_FILE_BYTES || '1048576', 10); // 1MB
 
   /**
    * Inicia una nueva descarga
@@ -109,6 +110,7 @@ class DownloadManager {
   private async performDownload(active: ActiveDownload): Promise<string> {
     const { options, controller } = active;
     let tempPath: string | undefined;
+    let finalPath: string | undefined;
 
     try {
       // Determinar la ruta de destino
@@ -133,6 +135,7 @@ class DownloadManager {
       }
 
       tempPath = `${destination.fullPath}.download`;
+      finalPath = destination.fullPath;
 
       // Si quedó un temporal viejo, limpiarlo
       if (existsSync(tempPath)) {
@@ -247,6 +250,12 @@ class DownloadManager {
       // Mover de .download a archivo final
       await rename(tempPath, destination.fullPath);
 
+      // Validación mínima anti-respuestas HTML/errores truncados (ej: 71 bytes)
+      const finalStats = await stat(destination.fullPath);
+      if (finalStats.size < this.minValidFileBytes) {
+        throw new Error(`Archivo inválido o incompleto (${finalStats.size} bytes)`);
+      }
+
       // Notificar completitud
       active.onProgress?.({
         id: options.id,
@@ -264,6 +273,9 @@ class DownloadManager {
     } catch (error) {
       if (tempPath && existsSync(tempPath)) {
         await unlink(tempPath).catch(() => undefined);
+      }
+      if (finalPath && existsSync(finalPath)) {
+        await unlink(finalPath).catch(() => undefined);
       }
 
       if (error instanceof Error && error.name === 'AbortError') {

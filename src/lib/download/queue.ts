@@ -332,27 +332,37 @@ class QueueProcessor {
       return true;
     }
 
-    // Si no es la actual, actualizar estado en cola
+    // Si no es la actual, eliminar de cola (incluye errores para permitir reintento limpio)
     const item = getQueueItem(id);
-    if (item && (item.status === 'pending' || item.status === 'paused' || item.status === 'downloading')) {
-      // Eliminar el archivo físico si existe
+    if (item) {
       if (item.destination_path) {
         deleteDownloadFile(item.destination_path);
       }
 
-      updateQueueItem(id, {
-        status: 'cancelled',
-        completed_at: Date.now(),
-      });
+      // Para pendientes/pausados/downloading lo marcamos y movemos a historial
+      if (item.status === 'pending' || item.status === 'paused' || item.status === 'downloading') {
+        updateQueueItem(id, {
+          status: 'cancelled',
+          completed_at: Date.now(),
+        });
+        completeDownload(id);
 
-      completeDownload(id);
+        progressEmitter.emit('download', {
+          id,
+          status: 'cancelled',
+        });
+        return true;
+      }
 
-      progressEmitter.emit('download', {
-        id,
-        status: 'cancelled',
-      });
-
-      return true;
+      // Para errores, lo quitamos directamente de cola
+      if (item.status === 'error' || item.status === 'cancelled') {
+        removeFromQueue(id);
+        progressEmitter.emit('queue', {
+          type: 'removed',
+          id,
+        });
+        return true;
+      }
     }
 
     return false;
