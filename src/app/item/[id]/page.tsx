@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Download, Tv, Clock, HardDrive, Film, Volume2, Subtitles } from "lucide-react";
+import { ArrowLeft, Download, Tv, Clock, HardDrive, Film, Volume2, Subtitles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -208,6 +208,12 @@ export default function ItemDetailsPage() {
     }
   }, [item, selectedSeason]);
 
+  useEffect(() => {
+    if (!actionError) return;
+    const timer = setTimeout(() => setActionError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [actionError]);
+
   const selectedSeasonData = useMemo(
     () => item?.seasons?.find((s) => s.seasonNumber === selectedSeason),
     [item, selectedSeason]
@@ -342,6 +348,21 @@ export default function ItemDetailsPage() {
 
   return (
     <div className="container px-4 py-6">
+      {actionError && (
+        <div className="fixed right-4 top-20 z-[100] w-[min(92vw,420px)] rounded-lg border border-destructive/40 bg-background shadow-lg">
+          <div className="flex items-start gap-3 p-3">
+            <div className="flex-1 text-sm text-destructive">{actionError}</div>
+            <button
+              type="button"
+              aria-label="Cerrar"
+              className="rounded p-1 text-muted-foreground hover:bg-muted"
+              onClick={() => setActionError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
       <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.back()}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         Volver
@@ -463,12 +484,6 @@ export default function ItemDetailsPage() {
                     </Badge>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {actionError && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {actionError}
               </div>
             )}
 
