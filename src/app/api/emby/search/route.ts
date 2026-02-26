@@ -6,6 +6,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchItems, ensureAuthenticated } from '@/lib/emby/client';
 
+const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+type CachedSearch = {
+  items: Awaited<ReturnType<typeof searchItems>>;
+  total: number;
+  cachedAt: number;
+};
+
+// Cache en memoria del proceso
+const searchCache = new Map<string, CachedSearch>();
+
+function getCacheKey(query: string, type?: 'Movie' | 'Series'): string {
+  return `${query.trim().toLowerCase()}::${type || 'all'}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Asegurar que estamos autenticados
@@ -19,13 +34,45 @@ export async function GET(request: NextRequest) {
     }
 
     const type = searchParams.get('type') as 'Movie' | 'Series' | undefined;
+    const cacheKey = getCacheKey(query, type);
+    const now = Date.now();
+
+    const cached = searchCache.get(cacheKey);
+    if (cached && now - cached.cachedAt < SEARCH_CACHE_TTL_MS) {
+      return NextResponse.json(
+        {
+          items: cached.items,
+          total: cached.total,
+          cached: true,
+        },
+        {
+          headers: {
+            'X-Search-Cache': 'HIT',
+          },
+        }
+      );
+    }
 
     const results = await searchItems(query, type);
 
-    return NextResponse.json({
+    searchCache.set(cacheKey, {
       items: results,
       total: results.length,
+      cachedAt: now,
     });
+
+    return NextResponse.json(
+      {
+        items: results,
+        total: results.length,
+        cached: false,
+      },
+      {
+        headers: {
+          'X-Search-Cache': 'MISS',
+        },
+      }
+    );
   } catch (error) {
     console.error('Error en búsqueda de Emby:', error);
     return NextResponse.json(
