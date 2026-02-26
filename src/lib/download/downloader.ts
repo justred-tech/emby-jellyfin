@@ -4,7 +4,7 @@
  */
 
 import { createWriteStream, existsSync } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, rename, unlink } from 'fs/promises';
 import { pipeline } from 'stream/promises';
 import { join } from 'path';
 import { ensureDirectory, getDestinationPath } from './organizer';
@@ -107,6 +107,7 @@ class DownloadManager {
    */
   private async performDownload(active: ActiveDownload): Promise<string> {
     const { options, controller } = active;
+    let tempPath: string | undefined;
 
     try {
       // Determinar la ruta de destino
@@ -130,6 +131,13 @@ class DownloadManager {
         throw new Error(`El archivo ya existe: ${destination.fullPath}`);
       }
 
+      tempPath = `${destination.fullPath}.download`;
+
+      // Si quedó un temporal viejo, limpiarlo
+      if (existsSync(tempPath)) {
+        await unlink(tempPath).catch(() => undefined);
+      }
+
       // Iniciar la descarga
       const response = await fetch(options.url, {
         signal: controller.signal,
@@ -142,8 +150,8 @@ class DownloadManager {
       const contentLength = response.headers.get('content-length');
       const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
 
-      // Crear stream de escritura
-      const fileStream = createWriteStream(destination.fullPath);
+      // Crear stream de escritura en fichero temporal
+      const fileStream = createWriteStream(tempPath);
       const reader = response.body?.getReader();
 
       if (!reader) {
@@ -184,10 +192,13 @@ class DownloadManager {
       fileStream.end();
 
       // Verificar que el archivo se haya descargado correctamente
-      const stats = await stat(destination.fullPath);
+      const stats = await stat(tempPath);
       if (stats.size === 0) {
         throw new Error('El archivo descargado está vacío');
       }
+
+      // Mover de .download a archivo final
+      await rename(tempPath, destination.fullPath);
 
       // Notificar completitud
       active.onProgress?.({
@@ -204,6 +215,10 @@ class DownloadManager {
 
       return destination.fullPath;
     } catch (error) {
+      if (tempPath && existsSync(tempPath)) {
+        await unlink(tempPath).catch(() => undefined);
+      }
+
       if (error instanceof Error && error.name === 'AbortError') {
         active.onProgress?.({
           id: options.id,

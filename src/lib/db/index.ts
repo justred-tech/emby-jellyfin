@@ -382,6 +382,33 @@ export function getHistory(limit: number = 50): DownloadHistoryItem[] {
 }
 
 /**
+ * Verifica si un item de Emby ya está en cola o ya se completó
+ */
+export function existsQueuedOrCompletedByEmbyItemId(embyItemId: string): boolean {
+  const database = getDatabase();
+
+  const inQueueStmt = database.prepare(`
+    SELECT 1 FROM download_queue
+    WHERE emby_item_id = ?
+      AND status IN ('pending', 'downloading', 'paused', 'completed')
+    LIMIT 1
+  `);
+
+  const inHistoryStmt = database.prepare(`
+    SELECT 1 FROM download_history
+    WHERE emby_item_id = ?
+      AND status = 'completed'
+    LIMIT 1
+  `);
+
+  const inQueue = inQueueStmt.get(embyItemId);
+  if (inQueue) return true;
+
+  const inHistory = inHistoryStmt.get(embyItemId);
+  return !!inHistory;
+}
+
+/**
  * Limpia el historial anterior a una fecha
  */
 export function clearHistory(before: number): number {

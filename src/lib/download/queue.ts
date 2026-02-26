@@ -14,6 +14,7 @@ import {
   getNextPendingItem,
   completeDownload,
   getQueueItem,
+  existsQueuedOrCompletedByEmbyItemId,
   type DownloadQueueItem,
 } from '../db';
 import { downloadManager } from './downloader';
@@ -407,6 +408,10 @@ export async function addMovieToQueue(
   year: number,
   downloadUrl: string
 ): Promise<string> {
+  if (existsQueuedOrCompletedByEmbyItemId(embyItemId)) {
+    throw new Error(`Ya existe en cola o completado: ${embyItemName}`);
+  }
+
   const id = randomUUID();
 
   const item = addToQueue({
@@ -446,6 +451,10 @@ export async function addEpisodeToQueue(
   episodeNumber: number,
   downloadUrl: string
 ): Promise<string> {
+  if (existsQueuedOrCompletedByEmbyItemId(embyItemId)) {
+    throw new Error(`Ya existe en cola o completado: ${embyItemName}`);
+  }
+
   const id = randomUUID();
 
   const item = addToQueue({

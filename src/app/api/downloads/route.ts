@@ -119,23 +119,33 @@ export async function POST(request: NextRequest) {
 
         const episodes = await getSeasonEpisodes(seriesId, seasonNumber);
         const ids: string[] = [];
+        let skipped = 0;
 
         for (const ep of episodes) {
-          const epUrl = getDownloadUrl(ep.Id, config);
-          const id = await addEpisodeToQueue(
-            ep.Id,
-            ep.Name,
-            seriesId,
-            seriesName,
-            seasonNumber,
-            ep.IndexNumber || 0,
-            epUrl
-          );
-          ids.push(id);
+          try {
+            const epUrl = getDownloadUrl(ep.Id, config);
+            const id = await addEpisodeToQueue(
+              ep.Id,
+              ep.Name,
+              seriesId,
+              seriesName,
+              seasonNumber,
+              ep.IndexNumber || 0,
+              epUrl
+            );
+            ids.push(id);
+          } catch {
+            skipped += 1;
+          }
         }
 
-        downloadId = ids;
-        break;
+        return NextResponse.json({
+          success: true,
+          id: ids,
+          added: ids.length,
+          skipped,
+          message: 'Temporada procesada',
+        });
       }
 
       case 'series': {
@@ -148,23 +158,33 @@ export async function POST(request: NextRequest) {
 
         const episodes = await getEpisodes(seriesId);
         const ids: string[] = [];
+        let skipped = 0;
 
         for (const ep of episodes) {
-          const epUrl = getDownloadUrl(ep.Id, config);
-          const id = await addEpisodeToQueue(
-            ep.Id,
-            ep.Name,
-            seriesId,
-            seriesName,
-            ep.ParentIndexNumber || 0,
-            ep.IndexNumber || 0,
-            epUrl
-          );
-          ids.push(id);
+          try {
+            const epUrl = getDownloadUrl(ep.Id, config);
+            const id = await addEpisodeToQueue(
+              ep.Id,
+              ep.Name,
+              seriesId,
+              seriesName,
+              ep.ParentIndexNumber || 0,
+              ep.IndexNumber || 0,
+              epUrl
+            );
+            ids.push(id);
+          } catch {
+            skipped += 1;
+          }
         }
 
-        downloadId = ids;
-        break;
+        return NextResponse.json({
+          success: true,
+          id: ids,
+          added: ids.length,
+          skipped,
+          message: 'Serie procesada',
+        });
       }
 
       default:
