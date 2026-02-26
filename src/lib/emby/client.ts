@@ -66,9 +66,9 @@ async function authenticateWithEmby(
 /**
  * Inicializa la configuración de Emby autenticando si es necesario
  */
-async function initializeEmbyConfig(): Promise<{ host: string; apiKey: string; userId: string }> {
+async function initializeEmbyConfig(forceRefresh: boolean = false): Promise<{ host: string; apiKey: string; userId: string }> {
   // Si ya tenemos config en cache, usarla
-  if (cachedConfig) {
+  if (cachedConfig && !forceRefresh) {
     return cachedConfig;
   }
 
@@ -169,12 +169,20 @@ async function embyFetch<T>(
   const baseUrl = buildBaseUrl(config.host);
   const url = `${baseUrl}${endpoint}`;
 
-  const response = await fetch(url, {
+  const doFetch = async (apiKey: string) => fetch(url, {
     headers: {
-      'X-Emby-Token': config.apiKey,
+      'X-Emby-Token': apiKey,
       'Accept': 'application/json',
     },
   });
+
+  let response = await doFetch(config.apiKey);
+
+  // Si el token expiró, refrescar sesión y reintentar una vez
+  if (response.status === 401 && EMBY_HOST && EMBY_EMAIL && EMBY_PASSWORD) {
+    const fresh = await initializeEmbyConfig(true);
+    response = await doFetch(fresh.apiKey);
+  }
 
   if (!response.ok) {
     throw new Error(`Error en petición a Emby: ${response.status} ${response.statusText}`);
