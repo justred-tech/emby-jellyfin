@@ -19,6 +19,15 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function humanizeError(error?: string): string | undefined {
+  if (!error) return undefined;
+  if (error.includes('401')) return 'Error de autenticación con Emby (401). Se reintentará con token nuevo.';
+  if (error.includes('403')) return 'Emby denegó acceso al archivo (403).';
+  if (error.includes('Archivo inválido o incompleto')) return 'Emby devolvió un archivo inválido (muy pequeño).';
+  if (error.includes('Ya existe en cola o completado')) return 'Ya está en cola o ya existe una descarga válida.';
+  return error;
+}
+
 export function QueueItemComponent({
   item,
   onCancel,
@@ -101,7 +110,10 @@ export function QueueItemComponent({
       )}
 
       {item.error && (
-        <p className="text-sm text-destructive">{item.error}</p>
+        <div className="text-sm text-destructive">
+          <p>{humanizeError(item.error)}</p>
+          <p className="mt-1 text-xs opacity-80">Detalle técnico: {item.error}</p>
+        </div>
       )}
     </div>
   );
