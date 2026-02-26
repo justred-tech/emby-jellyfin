@@ -15,6 +15,8 @@ import { getSetting, setSetting } from '../db';
 
 // Configuración desde variables de entorno
 const EMBY_HOST = process.env.EMBY_HOST || '';
+const EMBY_API_KEY = process.env.EMBY_API_KEY || '';
+const EMBY_USER_ID = process.env.EMBY_USER_ID || '';
 const EMBY_EMAIL = process.env.EMBY_EMAIL || '';
 const EMBY_PASSWORD = process.env.EMBY_PASSWORD || '';
 
@@ -45,6 +47,7 @@ async function authenticateWithEmby(
     body: JSON.stringify({
       Username: email,
       Pw: password,
+      Password: password,
     }),
   });
 
@@ -69,7 +72,21 @@ async function initializeEmbyConfig(): Promise<{ host: string; apiKey: string; u
     return cachedConfig;
   }
 
-  // Intentar obtener de la base de datos primero
+  // Prioridad 1: si hay credenciales, autenticar siempre para obtener token fresco
+  if (EMBY_HOST && EMBY_EMAIL && EMBY_PASSWORD) {
+    try {
+      const { accessToken, userId } = await authenticateWithEmby(EMBY_HOST, EMBY_EMAIL, EMBY_PASSWORD);
+      setSetting('emby_host', EMBY_HOST);
+      setSetting('emby_api_key', accessToken);
+      setSetting('emby_user_id', userId);
+      cachedConfig = { host: EMBY_HOST, apiKey: accessToken, userId };
+      return cachedConfig;
+    } catch {
+      // fallback abajo
+    }
+  }
+
+  // Prioridad 2: base de datos
   const savedHost = getSetting('emby_host');
   const savedApiKey = getSetting('emby_api_key');
   const savedUserId = getSetting('emby_user_id');
@@ -79,7 +96,7 @@ async function initializeEmbyConfig(): Promise<{ host: string; apiKey: string; u
     return cachedConfig;
   }
 
-  // Si no hay credenciales guardadas, autenticar con email/password
+  // Prioridad 3: autenticar con email/password y persistir token
   const host = EMBY_HOST || savedHost;
   const email = EMBY_EMAIL;
   const password = EMBY_PASSWORD;
@@ -114,8 +131,8 @@ export function getEmbyConfig(): { host: string; apiKey: string; userId: string 
 
   // Intentar obtener de variables de entorno o base de datos
   const host = EMBY_HOST || getSetting('emby_host') || '';
-  const apiKey = getSetting('emby_api_key') || '';
-  const userId = getSetting('emby_user_id') || '';
+  const apiKey = EMBY_API_KEY || getSetting('emby_api_key') || '';
+  const userId = EMBY_USER_ID || getSetting('emby_user_id') || '';
 
   if (host && apiKey && userId) {
     cachedConfig = { host, apiKey, userId };
@@ -299,7 +316,7 @@ export function getDownloadUrl(itemId: string, config?: { host: string; apiKey: 
   }
 
   const baseUrl = buildBaseUrl(embyConfig.host);
-  return `${baseUrl}/Videos/${itemId}/stream?static=true&api_key=${embyConfig.apiKey}`;
+  return `${baseUrl}/Items/${itemId}/Download?api_key=${embyConfig.apiKey}`;
 }
 
 /**

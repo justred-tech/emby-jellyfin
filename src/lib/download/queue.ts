@@ -123,19 +123,25 @@ class QueueProcessor {
 
     try {
       // Obtener información adicional del item si es necesario
-      const embyItem = await getItem(item.emby_item_id);
-      const container = embyItem.Container || 'mkv';
+      let embyItem: any = null;
+      try {
+        embyItem = await getItem(item.emby_item_id);
+      } catch (e) {
+        console.warn(`No se pudo obtener metadata de Emby para ${item.emby_item_id}, usando fallback local`);
+      }
+
+      const container = embyItem?.Container || 'mkv';
 
       // Calcular la ruta de destino antes de iniciar la descarga
       const downloadType: 'movie' | 'episode' = item.type === 'movie' ? 'movie' : 'episode';
       const { getDestinationPath } = await import('./organizer');
       const destination = await getDestinationPath(
         downloadType,
-        item.series_id ? (embyItem.SeriesName || item.emby_item_name) : item.emby_item_name,
+        item.series_id ? (embyItem?.SeriesName || item.emby_item_name) : item.emby_item_name,
         item.year,
         item.season_number,
         item.episode_number,
-        item.type === 'episode' ? embyItem.Name : item.emby_item_name,
+        item.type === 'episode' ? (embyItem?.Name || item.emby_item_name) : item.emby_item_name,
         container
       );
 
@@ -152,7 +158,7 @@ class QueueProcessor {
           type: downloadType,
           name: item.emby_item_name,
           year: item.year,
-          seriesName: item.series_id ? embyItem.SeriesName : undefined,
+          seriesName: item.series_id ? (embyItem?.SeriesName || item.emby_item_name) : undefined,
           seasonNumber: item.season_number,
           episodeNumber: item.episode_number,
           episodeTitle: item.type === 'episode' ? embyItem.Name : undefined,

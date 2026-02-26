@@ -14,6 +14,9 @@ services:
     ports:
       - "3030:3000"
 
+    env_file:
+      - ./.env
+
     # Shared volumes with Jellyfin
     volumes:
       # Movies directory - shared with Jellyfin
@@ -30,10 +33,11 @@ services:
       - DATA_DIR=/app/data
       - MOVIES_DIR=/media/movies
       - TVSHOWS_DIR=/media/tvshows
-      - EMBY_HOST=${EMBY_HOST}
-      - EMBY_EMAIL=${EMBY_EMAIL}
-      - EMBY_PASSWORD=${EMBY_PASSWORD}
-      - EMBY_USER_ID=${EMBY_USER_ID}
+      - EMBY_HOST
+      - EMBY_API_KEY
+      - EMBY_EMAIL
+      - EMBY_PASSWORD
+      - EMBY_USER_ID
 
     # Logging configuration
     logging:

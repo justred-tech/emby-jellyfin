@@ -5,7 +5,7 @@
 
 import { createWriteStream, existsSync } from 'fs';
 import { stat, rename, unlink } from 'fs/promises';
-import { pipeline } from 'stream/promises';
+import { spawn } from 'child_process';
 import { join } from 'path';
 import { ensureDirectory, getDestinationPath } from './organizer';
 
@@ -51,6 +51,7 @@ export interface DownloadOptions {
 interface ActiveDownload {
   options: DownloadOptions;
   controller: AbortController;
+  process?: ReturnType<typeof spawn>;
   startTime: number;
   lastProgressTime: number;
   lastDownloadedBytes: number;
@@ -138,12 +139,51 @@ class DownloadManager {
         await unlink(tempPath).catch(() => undefined);
       }
 
-      // Iniciar la descarga
+      // Iniciar la descarga con timeout de primer byte (evita bloqueos eternos)
+      const firstByteTimeoutMs = 30000;
+      const firstByteTimer = setTimeout(() => {
+        if (!controller.signal.aborted) {
+          controller.abort(new Error('Timeout esperando respuesta de Emby (sin datos)'));
+        }
+      }, firstByteTimeoutMs);
+
+      const tokenMatch = options.url.match(/[?&]api_key=([^&]+)/);
+      const token = tokenMatch?.[1];
+
       const response = await fetch(options.url, {
         signal: controller.signal,
+        headers: token
+          ? {
+              'X-Emby-Token': token,
+              'User-Agent': 'EmbyDownloader/1.0',
+            }
+          : {
+              'User-Agent': 'EmbyDownloader/1.0',
+            },
       });
 
       if (!response.ok) {
+        clearTimeout(firstByteTimer);
+
+        // Fallback a curl (igual que emby-script), útil cuando fetch devuelve 403
+        if (response.status === 401 || response.status === 403) {
+          await this.performDownloadWithCurl(active, tempPath, destination.fullPath);
+
+          const stats = await stat(destination.fullPath);
+          active.onProgress?.({
+            id: options.id,
+            status: 'completed',
+            progress: 1,
+            downloadedBytes: stats.size,
+            totalBytes: stats.size,
+            speed: 0,
+            eta: 0,
+          });
+
+          active.onComplete?.(destination.fullPath);
+          return destination.fullPath;
+        }
+
         throw new Error(`Error al descargar: ${response.status} ${response.statusText}`);
       }
 
@@ -160,12 +200,18 @@ class DownloadManager {
 
       let downloadedBytes = 0;
       const startTime = Date.now();
+      let receivedFirstChunk = false;
 
       // Leer y escribir en chunks
       while (true) {
         const { done, value } = await reader.read();
 
         if (done) break;
+
+        if (!receivedFirstChunk) {
+          receivedFirstChunk = true;
+          clearTimeout(firstByteTimer);
+        }
 
         downloadedBytes += value.length;
 
@@ -190,6 +236,7 @@ class DownloadManager {
       }
 
       fileStream.end();
+      clearTimeout(firstByteTimer);
 
       // Verificar que el archivo se haya descargado correctamente
       const stats = await stat(tempPath);
@@ -249,6 +296,58 @@ class DownloadManager {
     }
   }
 
+  private async performDownloadWithCurl(
+    active: ActiveDownload,
+    tempPath: string,
+    finalPath: string
+  ): Promise<void> {
+    const { options } = active;
+    const tokenMatch = options.url.match(/[?&]api_key=([^&]+)/);
+    const token = tokenMatch?.[1] || '';
+
+    await new Promise<void>((resolve, reject) => {
+      const args = ['-L', '-C', '-', '-o', tempPath, options.url];
+      if (token) {
+        args.push('-H', `X-Emby-Token: ${token}`);
+      }
+
+      const child = spawn('curl', args, { stdio: 'ignore' });
+      active.process = child;
+
+      const interval = setInterval(async () => {
+        try {
+          if (existsSync(tempPath)) {
+            const s = await stat(tempPath);
+            active.onProgress?.({
+              id: options.id,
+              status: 'downloading',
+              progress: 0,
+              downloadedBytes: s.size,
+              totalBytes: undefined,
+              speed: 0,
+              eta: undefined,
+            });
+          }
+        } catch {}
+      }, 1000);
+
+      child.on('error', (err) => {
+        clearInterval(interval);
+        reject(err);
+      });
+
+      child.on('exit', async (code) => {
+        clearInterval(interval);
+        if (code === 0) {
+          await rename(tempPath, finalPath);
+          resolve();
+        } else {
+          reject(new Error(`curl terminó con código ${code}`));
+        }
+      });
+    });
+  }
+
   /**
    * Pausa una descarga
    */
@@ -257,6 +356,9 @@ class DownloadManager {
     if (!download) return false;
 
     download.controller.abort();
+    if (download.process && !download.process.killed) {
+      download.process.kill('SIGTERM');
+    }
     this.activeDownloads.delete(id);
     return true;
   }
