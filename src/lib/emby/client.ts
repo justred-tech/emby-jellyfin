@@ -146,8 +146,9 @@ export function getEmbyConfig(): { host: string; apiKey: string; userId: string 
 /**
  * Asegura que la configuración está inicializada (llamar antes de operaciones)
  */
-export async function ensureAuthenticated(): Promise<void> {
-  await initializeEmbyConfig();
+export async function ensureAuthenticated(): Promise<{ host: string; apiKey: string; userId: string }> {
+  // Forzar refresh para evitar usar API keys estáticas/caducadas cacheadas
+  return initializeEmbyConfig(true);
 }
 
 /**
@@ -324,7 +325,7 @@ export function getDownloadUrl(itemId: string, config?: { host: string; apiKey: 
   }
 
   const baseUrl = buildBaseUrl(embyConfig.host);
-  return `${baseUrl}/Items/${itemId}/Download?api_key=${embyConfig.apiKey}`;
+  return `${baseUrl}/Videos/${itemId}/stream?static=true&api_key=${embyConfig.apiKey}`;
 }
 
 /**

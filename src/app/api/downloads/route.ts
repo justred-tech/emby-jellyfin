@@ -11,7 +11,7 @@ import {
   addMovieToQueue,
   addEpisodeToQueue,
 } from '@/lib/download/queue';
-import { getDownloadUrl, ensureAuthenticated, getEmbyConfig, getEpisodes, getSeasonEpisodes } from '@/lib/emby/client';
+import { getDownloadUrl, ensureAuthenticated, getEpisodes, getSeasonEpisodes } from '@/lib/emby/client';
 
 /**
  * GET - Obtiene la cola de descargas actual
@@ -48,8 +48,8 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Asegurar que estamos autenticados
-    await ensureAuthenticated();
+    // Asegurar que estamos autenticados y usar token fresco
+    const config = await ensureAuthenticated();
 
     const body = await request.json();
     const {
@@ -69,8 +69,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const config = getEmbyConfig();
 
     let downloadId: string | string[] = '';
 
