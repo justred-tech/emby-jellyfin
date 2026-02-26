@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'fs';
+import { mkdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 
 /**
@@ -394,18 +394,32 @@ export function existsQueuedOrCompletedByEmbyItemId(embyItemId: string): boolean
     LIMIT 1
   `);
 
-  const inHistoryStmt = database.prepare(`
-    SELECT 1 FROM download_history
-    WHERE emby_item_id = ?
-      AND status = 'completed'
-    LIMIT 1
-  `);
-
   const inQueue = inQueueStmt.get(embyItemId);
   if (inQueue) return true;
 
-  const inHistory = inHistoryStmt.get(embyItemId);
-  return !!inHistory;
+  const historyStmt = database.prepare(`
+    SELECT destination_path, downloaded_bytes
+    FROM download_history
+    WHERE emby_item_id = ?
+      AND status = 'completed'
+    ORDER BY completed_at DESC
+    LIMIT 1
+  `);
+
+  const minValidFileBytes = parseInt(process.env.MIN_VALID_FILE_BYTES || '1048576', 10);
+  const inHistory = historyStmt.get(embyItemId) as { destination_path?: string; downloaded_bytes?: number } | undefined;
+
+  if (!inHistory) return false;
+
+  const p = inHistory.destination_path;
+  if (!p || !existsSync(p)) return false;
+
+  try {
+    const size = statSync(p).size;
+    return size >= minValidFileBytes;
+  } catch {
+    return false;
+  }
 }
 
 /**

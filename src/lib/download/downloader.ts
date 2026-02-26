@@ -3,7 +3,7 @@
  * Utiliza streams para descargar archivos y reportar progreso
  */
 
-import { createWriteStream, existsSync } from 'fs';
+import { createWriteStream, existsSync, statSync } from 'fs';
 import { stat, rename, unlink } from 'fs/promises';
 import { spawn } from 'child_process';
 import { join } from 'path';
@@ -131,7 +131,16 @@ class DownloadManager {
 
       // Verificar si el archivo ya existe
       if (existsSync(destination.fullPath)) {
-        throw new Error(`El archivo ya existe: ${destination.fullPath}`);
+        try {
+          const existing = statSync(destination.fullPath);
+          if (existing.size < this.minValidFileBytes) {
+            await unlink(destination.fullPath).catch(() => undefined);
+          } else {
+            throw new Error(`El archivo ya existe: ${destination.fullPath}`);
+          }
+        } catch {
+          throw new Error(`El archivo ya existe: ${destination.fullPath}`);
+        }
       }
 
       tempPath = `${destination.fullPath}.download`;
@@ -352,6 +361,17 @@ class DownloadManager {
         clearInterval(interval);
         if (code === 0) {
           await rename(tempPath, finalPath);
+          try {
+            const s = await stat(finalPath);
+            if (s.size < this.minValidFileBytes) {
+              await unlink(finalPath).catch(() => undefined);
+              reject(new Error(`Archivo inválido o incompleto (${s.size} bytes)`));
+              return;
+            }
+          } catch (e) {
+            reject(e as Error);
+            return;
+          }
           resolve();
         } else {
           reject(new Error(`curl terminó con código ${code}`));
