@@ -35,6 +35,7 @@ export function QueueItemComponent({
   const isDownloading = item.status === "downloading";
   const isPending = item.status === "pending";
   const isSeries = item.itemType === "series" && (item.seasonNumber !== undefined || item.episodeNumber !== undefined);
+  const canRemove = item.status !== "completed";
 
   const getStatusBadge = () => {
     switch (item.status) {
@@ -74,7 +75,7 @@ export function QueueItemComponent({
           </div>
         </div>
         {/* Cancel button on the right */}
-        {(isPending || isDownloading) && (
+        {canRemove && (
           <Button
             size="sm"
             variant="ghost"
