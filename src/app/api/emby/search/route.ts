@@ -23,9 +23,6 @@ function getCacheKey(query: string, type?: 'Movie' | 'Series'): string {
 
 export async function GET(request: NextRequest) {
   try {
-    // Asegurar que estamos autenticados
-    await ensureAuthenticated();
-
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q');
 
@@ -52,6 +49,9 @@ export async function GET(request: NextRequest) {
         }
       );
     }
+
+    // Solo autenticar cuando haya miss de caché
+    await ensureAuthenticated();
 
     const results = await searchItems(query, type);
 
