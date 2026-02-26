@@ -55,6 +55,8 @@ export default function QueuePage() {
     status: dbItem.status === 'cancelled' ? 'error' : dbItem.status,
     progress: Math.round(dbItem.progress * 100),
     size: dbItem.total_bytes,
+    downloadedBytes: dbItem.downloaded_bytes,
+    totalBytes: dbItem.total_bytes,
     error: dbItem.error_message,
     addedAt: new Date(dbItem.added_at),
   }), []);
@@ -92,7 +94,7 @@ export default function QueuePage() {
           const sseEvent: SSEEvent = JSON.parse(event.data);
 
           if (sseEvent.type === 'download') {
-            const { id, progress, status, error } = sseEvent.data;
+            const { id, progress, status, error, downloadedBytes, totalBytes } = sseEvent.data;
 
             if (id) {
               setItems((prev) =>
@@ -106,6 +108,13 @@ export default function QueuePage() {
                   }
                   if (status) {
                     updates.status = status as QueueItem['status'];
+                  }
+                  if (downloadedBytes !== undefined) {
+                    updates.downloadedBytes = downloadedBytes;
+                  }
+                  if (totalBytes !== undefined) {
+                    updates.totalBytes = totalBytes;
+                    updates.size = totalBytes;
                   }
                   if (error) {
                     updates.error = error;

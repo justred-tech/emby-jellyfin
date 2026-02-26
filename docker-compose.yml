@@ -6,6 +6,10 @@ services:
     container_name: emby-downloader
     restart: unless-stopped
 
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
     # Port mapping
     ports:
       - "3030:3000"
@@ -26,6 +30,10 @@ services:
       - DATA_DIR=/app/data
       - MOVIES_DIR=/media/movies
       - TVSHOWS_DIR=/media/tvshows
+      - EMBY_HOST=${EMBY_HOST}
+      - EMBY_EMAIL=${EMBY_EMAIL}
+      - EMBY_PASSWORD=${EMBY_PASSWORD}
+      - EMBY_USER_ID=${EMBY_USER_ID}
 
     # Logging configuration
     logging:

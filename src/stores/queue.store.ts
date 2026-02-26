@@ -12,6 +12,8 @@ export interface QueueItem {
   status: QueueItemStatus;
   progress: number;
   size?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
   error?: string;
   addedAt: Date;
 }

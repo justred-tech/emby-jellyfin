@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { ArrowLeft, Download, Tv, Clock, HardDrive, Film, Volume2, Subtitles } from "lucide-react";
@@ -63,10 +63,12 @@ interface Season {
 }
 
 interface Episode {
+  id: string;
   episodeNumber: number;
   name: string;
   overview?: string;
   runtime?: number;
+  seasonNumber: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -106,14 +108,12 @@ export default function ItemDetailsPage() {
         if (!response.ok) throw new Error("Failed to fetch item");
         const data = await response.json();
 
-        // Get media source info
         const mediaSource = data.item.MediaSources?.[0] || {};
         const mediaStreams = mediaSource.MediaStreams || [];
 
         const streamVideo = mediaStreams.find((s: MediaStream) => s.Type === 'Video' || s.type === 'Video') || {};
         const streamAudio = mediaStreams.find((s: MediaStream) => s.Type === 'Audio' || s.type === 'Audio') || {};
 
-        // Get all audio tracks
         const audioTracks = mediaStreams
           .filter((s: MediaStream) => s.Type === 'Audio' || s.type === 'Audio')
           .map((s: MediaStream) => ({
@@ -124,7 +124,6 @@ export default function ItemDetailsPage() {
             channels: s.Channels || s.channels,
           }));
 
-        // Get all subtitle tracks
         const subtitleTracks = mediaStreams
           .filter((s: MediaStream) => s.Type === 'Subtitle' || s.type === 'Subtitle')
           .map((s: MediaStream) => ({
@@ -133,7 +132,6 @@ export default function ItemDetailsPage() {
             isDefault: s.IsDefault || s.isDefault,
           }));
 
-        // Map Emby item to ItemDetails format
         const mappedItem: ItemDetails = {
           id: data.item.Id,
           title: data.item.Name,
@@ -156,6 +154,39 @@ export default function ItemDetailsPage() {
           subtitleTracks,
         };
 
+        if (mappedItem.type === "series") {
+          const seriesRes = await fetch(`/api/emby/series/${id}`);
+          if (seriesRes.ok) {
+            const seriesData = await seriesRes.json();
+            const episodes = Array.isArray(seriesData.episodes) ? seriesData.episodes : [];
+            const seasonMeta = Array.isArray(seriesData.series?.Seasons) ? seriesData.series.Seasons : [];
+
+            const seasonMap = new Map<number, Episode[]>();
+            for (const ep of episodes) {
+              const sn = ep.ParentIndexNumber ?? 0;
+              const list = seasonMap.get(sn) || [];
+              list.push({
+                id: ep.Id,
+                episodeNumber: ep.IndexNumber ?? 0,
+                name: ep.Name,
+                overview: ep.Overview,
+                runtime: ep.RunTimeTicks,
+                seasonNumber: sn,
+              });
+              seasonMap.set(sn, list);
+            }
+
+            mappedItem.seasons = seasonMeta
+              .map((s: { IndexNumber: number; Name: string }): Season => ({
+                seasonNumber: s.IndexNumber,
+                name: s.Name,
+                episodes: (seasonMap.get(s.IndexNumber) || []).sort((a: Episode, b: Episode) => a.episodeNumber - b.episodeNumber),
+                episodeCount: (seasonMap.get(s.IndexNumber) || []).length,
+              }))
+              .sort((a: Season, b: Season) => a.seasonNumber - b.seasonNumber);
+          }
+        }
+
         setItem(mappedItem);
         setHasBackdrop(!!data.item.ImageTags?.Backdrop);
       } catch (error) {
@@ -170,15 +201,26 @@ export default function ItemDetailsPage() {
     }
   }, [id]);
 
-  const handleDownload = async () => {
-    if (!item) return;
+  useEffect(() => {
+    if (item?.type === "series" && item.seasons && item.seasons.length > 0 && selectedSeason === null) {
+      setSelectedSeason(item.seasons[0].seasonNumber);
+    }
+  }, [item, selectedSeason]);
+
+  const selectedSeasonData = useMemo(
+    () => item?.seasons?.find((s) => s.seasonNumber === selectedSeason),
+    [item, selectedSeason]
+  );
+
+  const handleDownloadMovie = async () => {
+    if (!item || item.type !== "movie") return;
     setIsDownloading(true);
     try {
       const response = await fetch("/api/downloads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: item.type,
+          type: "movie",
           itemId: item.id,
           name: item.title,
           year: item.year,
@@ -192,8 +234,31 @@ export default function ItemDetailsPage() {
     }
   };
 
+  const handleDownloadSeries = async () => {
+    if (!item || item.type !== "series") return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch("/api/downloads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "series",
+          itemId: item.id,
+          seriesId: item.id,
+          seriesName: item.title,
+          name: item.title,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to start download");
+      router.push("/queue");
+    } catch (error) {
+      console.error("Error starting series download:", error);
+      setIsDownloading(false);
+    }
+  };
+
   const handleDownloadSeason = async (seasonNumber: number) => {
-    if (!item) return;
+    if (!item || item.type !== "series") return;
     setIsDownloading(true);
     try {
       const response = await fetch("/api/downloads", {
@@ -211,7 +276,32 @@ export default function ItemDetailsPage() {
       if (!response.ok) throw new Error("Failed to start download");
       router.push("/queue");
     } catch (error) {
-      console.error("Error starting download:", error);
+      console.error("Error starting season download:", error);
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadEpisode = async (episode: Episode) => {
+    if (!item || item.type !== "series") return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch("/api/downloads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "episode",
+          itemId: episode.id,
+          name: episode.name,
+          seriesId: item.id,
+          seriesName: item.title,
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to start download");
+      router.push("/queue");
+    } catch (error) {
+      console.error("Error starting episode download:", error);
       setIsDownloading(false);
     }
   };
@@ -237,24 +327,14 @@ export default function ItemDetailsPage() {
     );
   }
 
-  const selectedSeasonData = item.seasons?.find(
-    (s) => s.seasonNumber === selectedSeason
-  );
-
   return (
     <div className="container px-4 py-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-4"
-        onClick={() => router.back()}
-      >
+      <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.back()}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         Volver
       </Button>
 
       <div className="flex flex-col gap-6">
-        {/* Backdrop */}
         {hasBackdrop && item.backdropUrl && (
           <div className="relative -mx-4 -mt-6 aspect-video w-[calc(100%+2rem)] overflow-hidden sm:-mx-6 sm:-mt-6">
             <Image
@@ -270,16 +350,10 @@ export default function ItemDetailsPage() {
         )}
 
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-          {/* Poster */}
           {item.posterUrl && (
             <div className="shrink-0">
               <div className="relative aspect-[2/3] w-48 overflow-hidden rounded-lg shadow-lg">
-                <Image
-                  src={item.posterUrl}
-                  alt={item.title}
-                  fill
-                  className="object-cover"
-                />
+                <Image src={item.posterUrl} alt={item.title} fill className="object-cover" />
               </div>
             </div>
           )}
@@ -288,25 +362,16 @@ export default function ItemDetailsPage() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold sm:text-3xl">{item.title}</h1>
-                {item.year && (
-                  <span className="text-muted-foreground">({item.year})</span>
-                )}
+                {item.year && <span className="text-muted-foreground">({item.year})</span>}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  {item.type === "movie" ? "Película" : "Serie"}
-                </Badge>
-                {item.officialRating && (
-                  <Badge variant="outline">{item.officialRating}</Badge>
-                )}
+                <Badge variant="secondary">{item.type === "movie" ? "Película" : "Serie"}</Badge>
+                {item.officialRating && <Badge variant="outline">{item.officialRating}</Badge>}
               </div>
             </div>
 
-            {item.overview && (
-              <p className="text-muted-foreground">{item.overview}</p>
-            )}
+            {item.overview && <p className="text-muted-foreground">{item.overview}</p>}
 
-            {/* Genres */}
             {item.genres && item.genres.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {item.genres.map((genre) => (
@@ -317,7 +382,6 @@ export default function ItemDetailsPage() {
               </div>
             )}
 
-            {/* Technical Info */}
             <div className="grid grid-cols-2 gap-3 rounded-lg border bg-card p-4 sm:grid-cols-4">
               {item.size !== undefined && item.size > 0 && (
                 <div className="flex items-center gap-2">
@@ -352,21 +416,8 @@ export default function ItemDetailsPage() {
                   <span className="font-semibold">{item.resolution}</span>
                 </div>
               )}
-              {item.videoCodec && (
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">Video</span>
-                  <span className="font-semibold uppercase">{item.videoCodec}</span>
-                </div>
-              )}
-              {item.audioCodec && (
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">Audio</span>
-                  <span className="font-semibold uppercase">{item.audioCodec}</span>
-                </div>
-              )}
             </div>
 
-            {/* Audio Tracks */}
             {item.audioTracks && item.audioTracks.length > 0 && (
               <div className="rounded-lg border bg-card p-4">
                 <div className="mb-2 flex items-center gap-2">
@@ -375,11 +426,7 @@ export default function ItemDetailsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {item.audioTracks.map((track, index) => (
-                    <Badge
-                      key={index}
-                      variant={track.isDefault ? "default" : "secondary"}
-                      className="text-xs"
-                    >
+                    <Badge key={index} variant={track.isDefault ? "default" : "secondary"} className="text-xs">
                       {track.language}
                       {track.channels && ` (${track.channels}ch)`}
                       {track.isDefault && " •"}
@@ -389,7 +436,6 @@ export default function ItemDetailsPage() {
               </div>
             )}
 
-            {/* Subtitle Tracks */}
             {item.subtitleTracks && item.subtitleTracks.length > 0 && (
               <div className="rounded-lg border bg-card p-4">
                 <div className="mb-2 flex items-center gap-2">
@@ -398,11 +444,7 @@ export default function ItemDetailsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {item.subtitleTracks.map((track, index) => (
-                    <Badge
-                      key={index}
-                      variant={track.isDefault ? "default" : "outline"}
-                      className="text-xs"
-                    >
+                    <Badge key={index} variant={track.isDefault ? "default" : "outline"} className="text-xs">
                       {track.language}
                       {track.isDefault && " •"}
                     </Badge>
@@ -411,31 +453,26 @@ export default function ItemDetailsPage() {
               </div>
             )}
 
-            {/* No subtitles message */}
-            {(!item.subtitleTracks || item.subtitleTracks.length === 0) && item.audioTracks && item.audioTracks.length > 0 && (
-              <div className="rounded-lg border border-dashed bg-card p-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Subtitles className="h-4 w-4" />
-                  <span className="text-sm">Sin subtítulos disponibles</span>
-                </div>
-              </div>
+            {item.type === "movie" && (
+              <Button onClick={handleDownloadMovie} disabled={isDownloading}>
+                <Download className="mr-2 h-4 w-4" />
+                {isDownloading ? "Añadiendo..." : "Descargar película"}
+              </Button>
             )}
 
-            {item.type === "movie" && (
-              <Button onClick={handleDownload} disabled={isDownloading}>
+            {item.type === "series" && (
+              <Button onClick={handleDownloadSeries} disabled={isDownloading}>
                 <Download className="mr-2 h-4 w-4" />
-                {isDownloading ? "Añadiendo..." : "Descargar"}
+                {isDownloading ? "Añadiendo..." : "Descargar serie completa"}
               </Button>
             )}
           </div>
         </div>
 
-        {/* Seasons for series */}
         {item.type === "series" && item.seasons && item.seasons.length > 0 && (
           <div className="flex flex-col gap-4">
             <h2 className="text-xl font-semibold">Temporadas</h2>
 
-            {/* Season selector */}
             <div className="flex flex-wrap gap-2">
               {item.seasons.map((season) => (
                 <Button
@@ -450,45 +487,33 @@ export default function ItemDetailsPage() {
               ))}
             </div>
 
-            {/* Download season button */}
             {selectedSeason !== null && (
-              <Button
-                onClick={() => handleDownloadSeason(selectedSeason)}
-                disabled={isDownloading}
-              >
+              <Button onClick={() => handleDownloadSeason(selectedSeason)} disabled={isDownloading}>
                 <Download className="mr-2 h-4 w-4" />
-                {isDownloading ? "Añadiendo..." : "Descargar temporada"}
+                {isDownloading ? "Añadiendo..." : `Descargar temporada ${selectedSeason}`}
               </Button>
             )}
 
-            {/* Episodes */}
             {selectedSeasonData && selectedSeasonData.episodes && (
               <div className="flex flex-col gap-3">
-                <h3 className="font-semibold">
-                  Episodios ({selectedSeasonData.episodeCount})
-                </h3>
-                <ScrollArea className="h-[400px]">
+                <h3 className="font-semibold">Episodios ({selectedSeasonData.episodeCount})</h3>
+                <ScrollArea className="h-[500px]">
                   <div className="flex flex-col gap-2 pr-4">
                     {selectedSeasonData.episodes.map((episode) => (
-                      <div
-                        key={episode.episodeNumber}
-                        className="flex flex-col gap-1 rounded-lg border bg-card p-4"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">
-                            {episode.episodeNumber}
-                          </Badge>
-                          <span className="font-semibold">{episode.name}</span>
+                      <div key={episode.id} className="rounded-lg border bg-card p-4">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">E{episode.episodeNumber}</Badge>
+                            <span className="font-semibold">{episode.name}</span>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => handleDownloadEpisode(episode)} disabled={isDownloading}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Descargar
+                          </Button>
                         </div>
-                        {episode.overview && (
-                          <p className="text-sm text-muted-foreground">
-                            {episode.overview}
-                          </p>
-                        )}
+                        {episode.overview && <p className="text-sm text-muted-foreground">{episode.overview}</p>}
                         {episode.runtime && (
-                          <span className="text-xs text-muted-foreground">
-                            {Math.floor(episode.runtime / 60)} min
-                          </span>
+                          <span className="text-xs text-muted-foreground">{formatRuntime(episode.runtime)}</span>
                         )}
                       </div>
                     ))}

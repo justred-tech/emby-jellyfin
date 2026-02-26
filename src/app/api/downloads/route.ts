@@ -10,9 +10,8 @@ import {
   getDownloadQueue,
   addMovieToQueue,
   addEpisodeToQueue,
-  addSeasonToQueue,
 } from '@/lib/download/queue';
-import { getDownloadUrl, ensureAuthenticated, getEmbyConfig } from '@/lib/emby/client';
+import { getDownloadUrl, ensureAuthenticated, getEmbyConfig, getEpisodes, getSeasonEpisodes } from '@/lib/emby/client';
 
 /**
  * GET - Obtiene la cola de descargas actual
@@ -37,7 +36,7 @@ export async function GET() {
 /**
  * POST - Añade items a la cola de descargas
  * Body: {
- *   type: 'movie' | 'episode' | 'season',
+ *   type: 'movie' | 'episode' | 'season' | 'series',
  *   itemId: string,
  *   name: string,
  *   year?: number,
@@ -45,7 +44,6 @@ export async function GET() {
  *   seriesName?: string,
  *   seasonNumber?: number,
  *   episodeNumber?: number,
- *   episodeIds?: string[]
  * }
  */
 export async function POST(request: NextRequest) {
@@ -63,7 +61,6 @@ export async function POST(request: NextRequest) {
       seriesName,
       seasonNumber,
       episodeNumber,
-      episodeIds,
     } = body;
 
     if (!type || !itemId) {
@@ -78,7 +75,7 @@ export async function POST(request: NextRequest) {
     let downloadId: string | string[] = '';
 
     switch (type) {
-      case 'movie':
+      case 'movie': {
         if (!year) {
           return NextResponse.json(
             { error: 'Se requiere el año para películas' },
@@ -89,11 +86,12 @@ export async function POST(request: NextRequest) {
         const movieUrl = getDownloadUrl(itemId, config);
         downloadId = await addMovieToQueue(itemId, name, year, movieUrl);
         break;
+      }
 
-      case 'episode':
-        if (!seriesId || !seasonNumber || !episodeNumber) {
+      case 'episode': {
+        if (!seriesId || !seriesName || seasonNumber === undefined || episodeNumber === undefined) {
           return NextResponse.json(
-            { error: 'Faltan parámetros para episodio: seriesId, seasonNumber, episodeNumber' },
+            { error: 'Faltan parámetros para episodio: seriesId, seriesName, seasonNumber, episodeNumber' },
             { status: 400 }
           );
         }
@@ -103,23 +101,71 @@ export async function POST(request: NextRequest) {
           itemId,
           name,
           seriesId,
-          seriesName || '',
+          seriesName,
           seasonNumber,
           episodeNumber,
           episodeUrl
         );
         break;
+      }
 
-      case 'season':
-        if (!seriesId || !seriesName || !seasonNumber || !episodeIds) {
+      case 'season': {
+        if (!seriesId || !seriesName || seasonNumber === undefined) {
           return NextResponse.json(
-            { error: 'Faltan parámetros para temporada: seriesId, seriesName, seasonNumber, episodeIds' },
+            { error: 'Faltan parámetros para temporada: seriesId, seriesName, seasonNumber' },
             { status: 400 }
           );
         }
 
-        downloadId = await addSeasonToQueue(seriesId, seriesName, seasonNumber, episodeIds);
+        const episodes = await getSeasonEpisodes(seriesId, seasonNumber);
+        const ids: string[] = [];
+
+        for (const ep of episodes) {
+          const epUrl = getDownloadUrl(ep.Id, config);
+          const id = await addEpisodeToQueue(
+            ep.Id,
+            ep.Name,
+            seriesId,
+            seriesName,
+            seasonNumber,
+            ep.IndexNumber || 0,
+            epUrl
+          );
+          ids.push(id);
+        }
+
+        downloadId = ids;
         break;
+      }
+
+      case 'series': {
+        if (!seriesId || !seriesName) {
+          return NextResponse.json(
+            { error: 'Faltan parámetros para serie: seriesId, seriesName' },
+            { status: 400 }
+          );
+        }
+
+        const episodes = await getEpisodes(seriesId);
+        const ids: string[] = [];
+
+        for (const ep of episodes) {
+          const epUrl = getDownloadUrl(ep.Id, config);
+          const id = await addEpisodeToQueue(
+            ep.Id,
+            ep.Name,
+            seriesId,
+            seriesName,
+            ep.ParentIndexNumber || 0,
+            ep.IndexNumber || 0,
+            epUrl
+          );
+          ids.push(id);
+        }
+
+        downloadId = ids;
+        break;
+      }
 
       default:
         return NextResponse.json({ error: 'Tipo de descarga no válido' }, { status: 400 });

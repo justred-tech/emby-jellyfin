@@ -82,8 +82,18 @@ export function QueueItemComponent({
         <ProgressBar progress={item.progress} />
       )}
 
-      {/* Show size info if available */}
-      {item.size !== undefined && item.size > 0 && (
+      {/* Show downloaded / total */}
+      {isDownloading && item.totalBytes !== undefined && item.totalBytes > 0 && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <HardDrive className="h-3 w-3" />
+          <span>
+            {formatBytes(item.downloadedBytes ?? 0)} / {formatBytes(item.totalBytes)}
+          </span>
+        </div>
+      )}
+
+      {/* Show total size info if available */}
+      {!isDownloading && item.size !== undefined && item.size > 0 && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <HardDrive className="h-3 w-3" />
           <span>{formatBytes(item.size)}</span>
