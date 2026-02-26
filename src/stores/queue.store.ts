@@ -14,6 +14,8 @@ export interface QueueItem {
   size?: number;
   downloadedBytes?: number;
   totalBytes?: number;
+  speedBytesPerSec?: number;
+  etaSeconds?: number;
   error?: string;
   addedAt: Date;
 }

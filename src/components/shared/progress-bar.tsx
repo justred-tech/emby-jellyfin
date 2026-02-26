@@ -22,8 +22,8 @@ export function ProgressBar({
         />
       </div>
       {showPercentage && (
-        <span className="text-xs text-muted-foreground min-w-[3rem] text-right">
-          {Math.round(clampedProgress)}%
+        <span className="text-xs text-muted-foreground min-w-[4.5rem] text-right">
+          {clampedProgress.toFixed(2)}%
         </span>
       )}
     </div>

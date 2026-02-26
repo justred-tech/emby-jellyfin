@@ -19,6 +19,17 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function formatEta(seconds?: number): string {
+  if (seconds === undefined || !isFinite(seconds) || seconds <= 0) return 'calculando...';
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
 function humanizeError(error?: string): string | undefined {
   if (!error) return undefined;
   if (error.includes('401')) return 'Error de autenticación con Emby (401). Se reintentará con token nuevo.';
@@ -94,11 +105,16 @@ export function QueueItemComponent({
 
       {/* Show downloaded / total */}
       {isDownloading && item.totalBytes !== undefined && item.totalBytes > 0 && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <HardDrive className="h-3 w-3" />
-          <span>
-            {formatBytes(item.downloadedBytes ?? 0)} / {formatBytes(item.totalBytes)}
-          </span>
+        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <HardDrive className="h-3 w-3" />
+            <span>
+              {formatBytes(item.downloadedBytes ?? 0)} / {formatBytes(item.totalBytes)}
+            </span>
+          </div>
+          <div>
+            Velocidad: {formatBytes(item.speedBytesPerSec ?? 0)}/s · ETA: {formatEta(item.etaSeconds)}
+          </div>
         </div>
       )}
 

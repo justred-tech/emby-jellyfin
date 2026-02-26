@@ -53,7 +53,7 @@ export default function QueuePage() {
     seasonNumber: dbItem.season_number ?? undefined,
     episodeNumber: dbItem.episode_number ?? undefined,
     status: dbItem.status === 'cancelled' ? 'error' : dbItem.status,
-    progress: Math.round(dbItem.progress * 100),
+    progress: dbItem.progress * 100,
     size: dbItem.total_bytes,
     downloadedBytes: dbItem.downloaded_bytes,
     totalBytes: dbItem.total_bytes,
@@ -94,7 +94,7 @@ export default function QueuePage() {
           const sseEvent: SSEEvent = JSON.parse(event.data);
 
           if (sseEvent.type === 'download') {
-            const { id, progress, status, error, downloadedBytes, totalBytes } = sseEvent.data;
+            const { id, progress, status, error, downloadedBytes, totalBytes, speed, eta } = sseEvent.data;
 
             if (id) {
               setItems((prev) =>
@@ -104,7 +104,7 @@ export default function QueuePage() {
                   const updates: Partial<QueueItem> = {};
 
                   if (progress !== undefined) {
-                    updates.progress = Math.round(progress * 100);
+                    updates.progress = progress * 100;
                   }
                   if (status) {
                     updates.status = status as QueueItem['status'];
@@ -115,6 +115,12 @@ export default function QueuePage() {
                   if (totalBytes !== undefined) {
                     updates.totalBytes = totalBytes;
                     updates.size = totalBytes;
+                  }
+                  if (speed !== undefined) {
+                    updates.speedBytesPerSec = speed;
+                  }
+                  if (eta !== undefined) {
+                    updates.etaSeconds = eta;
                   }
                   if (error) {
                     updates.error = error;
